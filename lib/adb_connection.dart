@@ -29,9 +29,12 @@ class AdbConnection {
   /// Only valid after a connection has been established.
   int? maxData;
 
-  final StreamController<AdbMessage> _adbStreamController = StreamController<AdbMessage>.broadcast();
-  final StreamController<bool> _socketConnectedController = StreamController<bool>.broadcast();
-  final StreamController<bool> _adbConnectedController = StreamController<bool>.broadcast();
+  final StreamController<AdbMessage> _adbStreamController =
+      StreamController<AdbMessage>.broadcast();
+  final StreamController<bool> _socketConnectedController =
+      StreamController<bool>.broadcast();
+  final StreamController<bool> _adbConnectedController =
+      StreamController<bool>.broadcast();
 
   Stream<bool> get onConnectionChanged => _adbConnectedController.stream;
 
@@ -54,39 +57,38 @@ class AdbConnection {
     if (_socket != null && _socketConnected == true) {
       return _socketConnected;
     }
-    try {
-      // Create socket connection
-      _socket = await Socket.connect(InternetAddress(ip), port, timeout: const Duration(seconds: 1))
-        ..setOption(SocketOption.tcpNoDelay, true);
 
-      // Add socket listener
-      _socket!.listen(
-        _handleAdbInput,
-        onDone: () {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
-        },
-        onError: (error) {
-          _socketConnected = false;
-          _socketConnectedController.add(_socketConnected);
-        },
-      );
-      _socketConnected = true;
-      _socketConnectedController.add(_socketConnected);
+    // Create socket connection
+    _socket = await Socket.connect(InternetAddress(ip), port,
+        timeout: const Duration(seconds: 1))
+      ..setOption(SocketOption.tcpNoDelay, true);
 
-      // Listen to adb messages
-      _handleAdbMessages(_adbStreamController.stream.where((message) => AdbProtocol.validateAdbMessage(message)));
+    // Add socket listener
+    _socket!.listen(
+      _handleAdbInput,
+      onDone: () {
+        _socketConnected = false;
+        _socketConnectedController.add(_socketConnected);
+      },
+      onError: (error) {
+        _socketConnected = false;
+        _socketConnectedController.add(_socketConnected);
+      },
+    );
+    _socketConnected = true;
+    _socketConnectedController.add(_socketConnected);
 
-      _socketConnectedController.stream.listen((connected) => connected ? {} : _adbConnectedController.add(false));
-      // Send connection init
-      await _connectAdb();
+    // Listen to adb messages
+    _handleAdbMessages(_adbStreamController.stream
+        .where((message) => AdbProtocol.validateAdbMessage(message)));
 
-      // wait for adbConnected
-      return await _adbConnectedController.stream.first;
-    } catch (e) {
-      print('Failed to connect to ADB: $e');
-      return false;
-    }
+    _socketConnectedController.stream.listen(
+        (connected) => connected ? {} : _adbConnectedController.add(false));
+    // Send connection init
+    await _connectAdb();
+
+    // wait for adbConnected
+    return await _adbConnectedController.stream.first;
   }
 
   Future<void> _connectAdb() async {
@@ -129,19 +131,23 @@ class AdbConnection {
       var payloadLength = byteData.getUint32(12, Endian.little);
       var checksum = byteData.getUint32(16, Endian.little);
       var magic = byteData.getUint32(20, Endian.little);
-      if (internalBuffer.length < AdbProtocol.ADB_HEADER_LENGTH + payloadLength) {
+      if (internalBuffer.length <
+          AdbProtocol.ADB_HEADER_LENGTH + payloadLength) {
         _inputBuffer.addAll(internalBuffer);
         break;
       }
       List<int>? payload;
       if (payloadLength > 0) {
-        payload = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH, AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
-        internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
-        _adbStreamController
-            .add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic, Uint8List.fromList(payload)));
+        payload = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH,
+            AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
+        internalBuffer = internalBuffer
+            .sublist(AdbProtocol.ADB_HEADER_LENGTH + payloadLength);
+        _adbStreamController.add(AdbMessage(command, arg0, arg1, payloadLength,
+            checksum, magic, Uint8List.fromList(payload)));
       } else {
         internalBuffer = internalBuffer.sublist(AdbProtocol.ADB_HEADER_LENGTH);
-        _adbStreamController.add(AdbMessage(command, arg0, arg1, payloadLength, checksum, magic));
+        _adbStreamController.add(
+            AdbMessage(command, arg0, arg1, payloadLength, checksum, magic));
       }
     }
   }
@@ -190,10 +196,13 @@ class AdbConnection {
         if (message.arg0 != AdbProtocol.AUTH_TYPE_TOKEN) return;
         // Send the token to the remote peer
         if (_sentSignature) {
-          _socket!.add(AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_RSA_PUBLIC, crypto.getAdbPublicKeyPayload()));
+          _socket!.add(AdbProtocol.generateAuth(
+              AdbProtocol.AUTH_TYPE_RSA_PUBLIC,
+              crypto.getAdbPublicKeyPayload()));
         } else if (message.payload != null) {
           _socket!.add(
-            AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_SIGNATURE, crypto.signAdbTokenPayload(message.payload!)),
+            AdbProtocol.generateAuth(AdbProtocol.AUTH_TYPE_SIGNATURE,
+                crypto.signAdbTokenPayload(message.payload!)),
           );
           _sentSignature = true;
         }
@@ -227,7 +236,8 @@ class AdbConnection {
     AdbStream stream = AdbStream(localId, this);
     openStreams[localId] = stream;
     await sendMessage(AdbProtocol.generateOpen(localId, destination));
-    if (await stream.onWriteReady.first.timeout(const Duration(seconds: 10), onTimeout: () => false)) {
+    if (await stream.onWriteReady.first
+        .timeout(const Duration(seconds: 10), onTimeout: () => false)) {
       return stream;
     } else {
       throw Exception('Stream open failed or refused by remote peer');
